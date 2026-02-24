@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Header } from "@/components/Header";
 import { URLInput } from "@/components/URLInput";
 import { AnalysisResult, generateAnalysis, ThreatLevel } from "@/components/AnalysisResult";
+import { DetailedReport, UrlAnalysisData } from "@/components/DetailedReport";
 import { Features } from "@/components/Features";
 import { HowItWorks } from "@/components/HowItWorks";
 import { Footer } from "@/components/Footer";
@@ -17,24 +18,58 @@ interface AnalysisState {
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
+  const [detailedData, setDetailedData] = useState<UrlAnalysisData | null>(null);
+  const [detailedError, setDetailedError] = useState<string | null>(null);
 
   const handleAnalyze = async (url: string) => {
     setIsLoading(true);
     setAnalysis(null);
+    setDetailedData(null);
+    setDetailedError(null);
 
-    // Simulate ML analysis delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Run both: local heuristic analysis + backend deep analysis in parallel
+    const localAnalysis = generateAnalysis(url);
 
-    const result = generateAnalysis(url);
-    setAnalysis({
-      url,
-      ...result,
-    });
+    // Call edge function for detailed analysis
+    let deepData: UrlAnalysisData | null = null;
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      if (projectId && anonKey) {
+        const res = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/analyze-url`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': anonKey,
+              'Authorization': `Bearer ${anonKey}`,
+            },
+            body: JSON.stringify({ url }),
+          }
+        );
+        if (res.ok) {
+          deepData = await res.json();
+        } else {
+          const err = await res.json().catch(() => ({ error: 'Analysis failed' }));
+          setDetailedError(err.error || 'Deep analysis failed');
+        }
+      }
+    } catch (e) {
+      console.error('Deep analysis error:', e);
+      setDetailedError('Could not connect to analysis server');
+    }
+
+    setAnalysis({ url, ...localAnalysis });
+    setDetailedData(deepData);
     setIsLoading(false);
   };
 
   const handleReset = () => {
     setAnalysis(null);
+    setDetailedData(null);
+    setDetailedError(null);
   };
 
   return (
@@ -43,7 +78,6 @@ const Index = () => {
       
       {/* Hero Section */}
       <section className="relative py-20 px-4 overflow-hidden">
-        {/* Background glow */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(190_95%_50%/0.1)_0%,transparent_50%)]" />
         
         <div className="container mx-auto relative z-10">
@@ -64,7 +98,6 @@ const Index = () => {
             </p>
           </div>
 
-          {/* Input or Results */}
           {!analysis ? (
             <URLInput onAnalyze={handleAnalyze} isLoading={isLoading} />
           ) : (
@@ -75,6 +108,15 @@ const Index = () => {
                 features={analysis.features}
                 score={analysis.score}
               />
+              
+              {/* Detailed Report */}
+              {detailedData && <DetailedReport data={detailedData} />}
+              {detailedError && (
+                <p className="text-center text-sm text-muted-foreground">
+                  Detailed analysis unavailable: {detailedError}
+                </p>
+              )}
+
               <div className="text-center">
                 <button
                   onClick={handleReset}
