@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, QrCode, Link2 } from "lucide-react";
+import jsQR from "jsqr";
 
 interface URLInputProps {
   onAnalyze: (url: string) => void;
@@ -11,6 +12,36 @@ interface URLInputProps {
 export const URLInput = ({ onAnalyze, isLoading }: URLInputProps) => {
   const [url, setUrl] = useState("");
   const [inputType, setInputType] = useState<"url" | "qr">("url");
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [qrFileName, setQrFileName] = useState<string | null>(null);
+
+  const decodeQR = (file: File) => {
+    setQrError(null);
+    setQrFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code?.data) {
+          setUrl(code.data);
+          setQrError(null);
+        } else {
+          setQrError("Could not detect a QR code in this image. Please try another image.");
+          setUrl("");
+        }
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,9 +88,17 @@ export const URLInput = ({ onAnalyze, isLoading }: URLInputProps) => {
         ) : (
           <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/50 transition-colors cursor-pointer bg-card/50">
             <QrCode className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground mb-2">
-              Drag & drop a QR code image or click to upload
-            </p>
+            {qrFileName ? (
+              <p className="text-sm text-primary mb-2">Uploaded: {qrFileName}</p>
+            ) : (
+              <p className="text-muted-foreground mb-2">
+                Drag & drop a QR code image or click to upload
+              </p>
+            )}
+            {qrError && <p className="text-sm text-dangerous mb-2">{qrError}</p>}
+            {url && inputType === "qr" && (
+              <p className="text-sm text-safe mb-2 font-mono truncate">Decoded: {url}</p>
+            )}
             <input
               type="file"
               accept="image/*"
@@ -67,10 +106,7 @@ export const URLInput = ({ onAnalyze, isLoading }: URLInputProps) => {
               id="qr-upload"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) {
-                  // Simulate QR decode - in production, use a QR library
-                  setUrl("https://decoded-from-qr.example.com");
-                }
+                if (file) decodeQR(file);
               }}
             />
             <label htmlFor="qr-upload">
