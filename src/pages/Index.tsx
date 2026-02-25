@@ -49,11 +49,11 @@ const Index = () => {
             body: JSON.stringify({ url }),
           }
         );
+        const resData = await res.json().catch(() => ({ error: 'Analysis failed' }));
         if (res.ok) {
-          deepData = await res.json();
+          deepData = resData;
         } else {
-          const err = await res.json().catch(() => ({ error: 'Analysis failed' }));
-          setDetailedError(err.error || 'Deep analysis failed');
+          setDetailedError(resData.error || 'Deep analysis failed');
         }
       }
     } catch (e) {
