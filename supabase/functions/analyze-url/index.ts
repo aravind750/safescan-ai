@@ -63,6 +63,35 @@ Deno.serve(async (req) => {
         finalUrl = response.url || currentUrl;
         break;
       }
+    } catch (fetchError) {
+      clearTimeout(timeout);
+      const msg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      // Handle DNS / network errors gracefully
+      if (msg.includes('dns error') || msg.includes('Name or service not known')) {
+        return new Response(JSON.stringify({
+          error: `Domain not found: "${new URL(targetUrl).hostname}" does not exist or cannot be resolved. This could indicate a suspicious or taken-down website.`,
+          errorType: 'DNS_ERROR',
+        }), {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (msg.includes('abort') || msg.includes('timed out')) {
+        return new Response(JSON.stringify({
+          error: `Connection timed out: "${new URL(targetUrl).hostname}" did not respond within 15 seconds.`,
+          errorType: 'TIMEOUT',
+        }), {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({
+        error: `Could not connect to "${new URL(targetUrl).hostname}": ${msg}`,
+        errorType: 'CONNECTION_ERROR',
+      }), {
+        status: 422,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } finally {
       clearTimeout(timeout);
     }
