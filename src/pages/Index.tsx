@@ -112,9 +112,9 @@ const Index = () => {
               {/* Detailed Report */}
               {detailedData && <DetailedReport data={detailedData} />}
               {detailedError && (
-                <p className="text-center text-sm text-muted-foreground">
-                  Detailed analysis unavailable: {detailedError}
-                </p>
+                <div className="max-w-2xl mx-auto p-4 rounded-lg border border-destructive/50 bg-destructive/10 text-center">
+                  <p className="text-sm font-medium text-destructive">⚠️ {detailedError}</p>
+                </div>
               )}
 
               <div className="text-center">
