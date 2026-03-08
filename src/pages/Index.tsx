@@ -29,11 +29,10 @@ interface AnalysisState {
 }
 
 // Build features from real backend data
-function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[] } {
+function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string } {
   const ti = data.threatIntelligence;
   if (!ti) {
-    // Fallback if no threat intelligence (shouldn't happen with new backend)
-    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"] };
+    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model" };
   }
 
   const ca = ti.contentAnalysis;
