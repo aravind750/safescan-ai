@@ -26,6 +26,7 @@ interface AnalysisState {
   score: number;
   threatReasons: string[];
   detectionSource: string;
+  detectionSources: string[];
 }
 
 // Build features from real backend data
