@@ -205,6 +205,7 @@ const Index = () => {
           }],
           score,
           threatReasons: [resData.error || 'Analysis failed'],
+          detectionSource: 'ML Model',
         });
       }
     } catch (e) {
