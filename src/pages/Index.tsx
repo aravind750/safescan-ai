@@ -25,14 +25,14 @@ interface AnalysisState {
   features: AnalysisFeature[];
   score: number;
   threatReasons: string[];
+  detectionSource: string;
 }
 
 // Build features from real backend data
-function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[] } {
+function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string } {
   const ti = data.threatIntelligence;
   if (!ti) {
-    // Fallback if no threat intelligence (shouldn't happen with new backend)
-    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"] };
+    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model" };
   }
 
   const ca = ti.contentAnalysis;
@@ -124,12 +124,13 @@ function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?:
     },
   ];
 
-  return {
-    threatLevel: ti.threatLevel as ThreatLevel,
-    features,
-    score: ti.threatScore,
-    threatReasons: ti.threatReasons || [],
-  };
+    return {
+      threatLevel: ti.threatLevel as ThreatLevel,
+      features,
+      score: ti.threatScore,
+      threatReasons: ti.threatReasons || [],
+      detectionSource: ti.detectionSource || 'ML Model',
+    };
 }
 
 const Index = () => {
@@ -171,8 +172,8 @@ const Index = () => {
       
       if (res.ok) {
         // Use REAL backend threat intelligence
-        const { threatLevel, features, score, threatReasons } = buildFeaturesFromBackend(resData);
-        setAnalysis({ url, threatLevel, features, score, threatReasons });
+        const { threatLevel, features, score, threatReasons, detectionSource } = buildFeaturesFromBackend(resData);
+        setAnalysis({ url, threatLevel, features, score, threatReasons, detectionSource });
         setDetailedData(resData);
       } else {
         // Backend error (DNS, timeout, etc.) - show error + mark as suspicious
@@ -204,6 +205,7 @@ const Index = () => {
           }],
           score,
           threatReasons: [resData.error || 'Analysis failed'],
+          detectionSource: 'ML Model',
         });
       }
     } catch (e) {
@@ -255,6 +257,7 @@ const Index = () => {
                 threatLevel={analysis.threatLevel}
                 features={analysis.features}
                 score={analysis.score}
+                detectionSource={analysis.detectionSource}
               />
 
               {/* Threat Reasons */}
