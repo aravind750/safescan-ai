@@ -154,6 +154,44 @@ function analyzeDomain(hostname: string) {
   };
 }
 
+// Google Safe Browsing API check
+async function checkGoogleSafeBrowsing(url: string): Promise<{ isThreat: boolean; threatTypes: string[] }> {
+  const apiKey = Deno.env.get('GOOGLE_SAFE_BROWSING_API_KEY');
+  if (!apiKey) {
+    console.warn('GOOGLE_SAFE_BROWSING_API_KEY not set, skipping GSB check');
+    return { isThreat: false, threatTypes: [] };
+  }
+
+  try {
+    const res = await fetch(
+      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: { clientId: 'deep-secure-analyzer', clientVersion: '1.0.0' },
+          threatInfo: {
+            threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
+            platformTypes: ['ANY_PLATFORM'],
+            threatEntryTypes: ['URL'],
+            threatEntries: [{ url }],
+          },
+        }),
+      }
+    );
+
+    const data = await res.json();
+    if (data.matches && data.matches.length > 0) {
+      const threatTypes = data.matches.map((m: any) => m.threatType as string);
+      return { isThreat: true, threatTypes: [...new Set(threatTypes)] };
+    }
+    return { isThreat: false, threatTypes: [] };
+  } catch (e) {
+    console.error('Google Safe Browsing API error:', e);
+    return { isThreat: false, threatTypes: [] };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -172,6 +210,9 @@ Deno.serve(async (req) => {
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = `https://${targetUrl}`;
     }
+
+    // Step 1: Check Google Safe Browsing API first
+    const gsbResult = await checkGoogleSafeBrowsing(targetUrl);
 
     const startTime = Date.now();
     const controller = new AbortController();
