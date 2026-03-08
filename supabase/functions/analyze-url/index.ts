@@ -14,28 +14,21 @@ const AD_NETWORK_PATTERNS = [
   'mgid', 'taboola', 'outbrain',
 ];
 
-// Aggressive ad/popup script patterns - focused on truly malicious patterns
+// Aggressive ad/popup script patterns
 const POPUP_PATTERNS = [
-  /popunder/gi,
-  /clickunder/gi,
-  /document\.onclick\s*=/gi,
-  /document\.body\.onclick\s*=/gi,
-  /window\.onclick\s*=/gi,
-  /onbeforeunload\s*=/gi,
-  /anti[_-]?adblock/gi,
-  /onclick\s*=\s*["'][^"']*window\.open[^"']*["']/gi,  // inline onclick with window.open
+  /popunder/gi, /clickunder/gi,
+  /document\.onclick\s*=/gi, /document\.body\.onclick\s*=/gi,
+  /window\.onclick\s*=/gi, /onbeforeunload\s*=/gi,
+  /onclick\s*=\s*["'][^"']*window\.open[^"']*["']/gi,
 ];
 
 // Suspicious redirect patterns
 const REDIRECT_PATTERNS = [
-  /window\.location\s*[=]/gi,
-  /location\.href\s*[=]/gi,
-  /location\.replace\s*\(/gi,
-  /meta\s+http-equiv\s*=\s*["']refresh["']/gi,
+  /window\.location\s*[=]/gi, /location\.href\s*[=]/gi,
+  /location\.replace\s*\(/gi, /meta\s+http-equiv\s*=\s*["']refresh["']/gi,
   /setTimeout\s*\(\s*function\s*\(\)\s*\{\s*window\.location/gi,
 ];
 
-// Known piracy / suspicious TLDs and domains
 const SUSPICIOUS_TLDS = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top', '.buzz', '.work', '.click', '.loan', '.download'];
 const KNOWN_DANGEROUS_KEYWORDS = [
   'movierulz', 'tamilrockers', 'filmyzilla', 'filmywap', 'bolly4u',
@@ -45,116 +38,127 @@ const KNOWN_DANGEROUS_KEYWORDS = [
   'free-money', 'lottery', 'prize', 'hack',
 ];
 
-function analyzeHtmlContent(bodyText: string) {
-  const lowerBody = bodyText.toLowerCase();
+// ===== ClamAV-style malware signature patterns =====
+const MALWARE_SIGNATURES = [
+  // EICAR test string
+  { name: 'EICAR-Test-Signature', pattern: /X5O!P%@AP\[4\\PZX54\(P\^\)7CC\)7\}\$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!\$H\+H\*/i },
+  // Shell commands / webshells
+  { name: 'Webshell.Generic', pattern: /(?:eval\s*\(\s*base64_decode|eval\s*\(\s*gzinflate|eval\s*\(\s*str_rot13|passthru\s*\(|shell_exec\s*\(|system\s*\(\s*\$_(?:GET|POST|REQUEST))/gi },
+  // PHP backdoors
+  { name: 'Backdoor.PHP', pattern: /(?:c99shell|r57shell|b374k|wso\s+shell|FilesMan|antak|weevely)/gi },
+  // Malicious JavaScript payloads
+  { name: 'JS.Trojan.Downloader', pattern: /(?:new\s+ActiveXObject\s*\(\s*["'](?:WScript\.Shell|Scripting\.FileSystemObject|MSXML2\.XMLHTTP)["']\))/gi },
+  { name: 'JS.Exploit.Kit', pattern: /(?:exploit[\s_-]*kit|(?:angler|rig|magnitude|neutrino|sundown)[\s_-]*(?:ek|exploit))/gi },
+  // Drive-by download patterns
+  { name: 'HTML.DriveBy', pattern: /(?:<applet[^>]*code\s*=|<object[^>]*classid\s*=\s*["']clsid:)/gi },
+  // Encoded shellcode patterns
+  { name: 'Shellcode.Generic', pattern: /(?:\\x(?:90){10,}|\\x(?:41){10,}|\\xcc\\xcc\\xcc)/gi },
+  // Malicious iframe injection
+  { name: 'HTML.IframeInject', pattern: /<iframe[^>]*(?:width\s*=\s*["']?[01]["']?\s+height\s*=\s*["']?[01]["']?|style\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|height\s*:\s*0))[^>]*src\s*=\s*["']https?:\/\//gi },
+  // Obfuscated malware loaders
+  { name: 'JS.Obfuscated.Loader', pattern: /(?:document\.write\s*\(\s*unescape\s*\(\s*['"][%\\x][^'"]{100,}['"]|eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*[dr]\s*\))/gi },
+  // Phishing kit patterns
+  { name: 'Phishing.Kit', pattern: /(?:paypa[l1][\s._-]*(?:secure|verify|update|confirm)|(?:bank|secure)[\s._-]*(?:login|verify|update)[\s._-]*(?:account|info))/gi },
+  // Keylogger patterns
+  { name: 'JS.Keylogger', pattern: /(?:addEventListener\s*\(\s*["']key(?:down|press|up)["']\s*,[\s\S]*?(?:XMLHttpRequest|fetch|navigator\.sendBeacon))/gi },
+  // Crypto jacking (extended)
+  { name: 'CryptoMiner.Extended', pattern: /(?:CoinHive\.(?:Anonymous|Token|User)|new\s+CoinHive|cryptonight\.wasm|miner\.(?:start|stop)\(\)|WebAssembly.*mining)/gi },
+];
 
-  // Count ad network references
-  let adNetworkCount = 0;
-  const detectedAdNetworks: string[] = [];
-  for (const network of AD_NETWORK_PATTERNS) {
-    const regex = new RegExp(network, 'gi');
-    const matches = lowerBody.match(regex);
-    if (matches) {
-      adNetworkCount += matches.length;
-      detectedAdNetworks.push(network);
+function scanWithClamAV(bodyText: string): { infected: boolean; threats: string[] } {
+  const threats: string[] = [];
+  for (const sig of MALWARE_SIGNATURES) {
+    const matches = bodyText.match(sig.pattern);
+    if (matches && matches.length > 0) {
+      threats.push(`${sig.name} (${matches.length} match${matches.length > 1 ? 'es' : ''})`);
+    }
+  }
+  return { infected: threats.length > 0, threats };
+}
+
+// ===== MetaDefender Cloud API =====
+async function checkMetaDefender(url: string): Promise<{ isThreat: boolean; threatDetails: string[]; scanResults: any }> {
+  const apiKey = Deno.env.get('METADEFENDER_API_KEY');
+  if (!apiKey) {
+    console.warn('METADEFENDER_API_KEY not set, skipping MetaDefender check');
+    return { isThreat: false, threatDetails: [], scanResults: null };
+  }
+
+  try {
+    // Submit URL for scanning
+    const submitRes = await fetch('https://api.metadefender.com/v4/url', {
+      method: 'POST',
+      headers: {
+        'apikey': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
+      console.error('MetaDefender submit error:', submitRes.status, errText);
+      return { isThreat: false, threatDetails: [], scanResults: null };
+    }
+
+    const submitData = await submitRes.json();
+
+    // If we get an immediate result
+    if (submitData.lookup_results) {
+      return parseMetaDefenderResults(submitData.lookup_results);
+    }
+
+    // Poll for results (up to 30 seconds)
+    const dataId = submitData.data_id;
+    if (!dataId) {
+      console.warn('MetaDefender: no data_id returned');
+      return { isThreat: false, threatDetails: [], scanResults: submitData };
+    }
+
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const pollRes = await fetch(`https://api.metadefender.com/v4/url/${dataId}`, {
+        headers: { 'apikey': apiKey },
+      });
+      if (!pollRes.ok) {
+        const errText = await pollRes.text();
+        console.error('MetaDefender poll error:', pollRes.status, errText);
+        continue;
+      }
+      const pollData = await pollRes.json();
+      if (pollData.lookup_results) {
+        return parseMetaDefenderResults(pollData.lookup_results);
+      }
+    }
+
+    return { isThreat: false, threatDetails: ['Scan timed out'], scanResults: null };
+  } catch (e) {
+    console.error('MetaDefender API error:', e);
+    return { isThreat: false, threatDetails: [], scanResults: null };
+  }
+}
+
+function parseMetaDefenderResults(lookupResults: any): { isThreat: boolean; threatDetails: string[]; scanResults: any } {
+  const threatDetails: string[] = [];
+  let isThreat = false;
+
+  if (lookupResults.detected_by && lookupResults.detected_by > 0) {
+    isThreat = true;
+    const sources = lookupResults.sources || [];
+    for (const source of sources) {
+      if (source.assessment && source.assessment.toLowerCase() !== 'safe' && source.assessment.toLowerCase() !== 'undetected') {
+        threatDetails.push(`${source.provider || 'Unknown'}: ${source.assessment}`);
+      }
+    }
+    if (threatDetails.length === 0) {
+      threatDetails.push(`Detected by ${lookupResults.detected_by} engine(s)`);
     }
   }
 
-  // Count popup/aggressive ad scripts
-  let popupScriptCount = 0;
-  for (const pattern of POPUP_PATTERNS) {
-    const matches = bodyText.match(pattern);
-    if (matches) popupScriptCount += matches.length;
-  }
-
-  // Count JS redirect attempts
-  let jsRedirectCount = 0;
-  for (const pattern of REDIRECT_PATTERNS) {
-    const matches = bodyText.match(pattern);
-    if (matches) jsRedirectCount += matches.length;
-  }
-
-  // Detect truly suspicious obfuscation (not normal minified JS)
-  // Only count patterns that are genuinely suspicious, not normal minification artifacts
-  const obfuscatedPatterns = [
-    /eval\s*\(\s*(?:unescape|atob|String\.fromCharCode)/gi, // eval with decoding = real obfuscation
-    /document\.write\s*\(\s*(?:unescape|atob)/gi,           // document.write with decoding
-    /unescape\s*\(\s*['"%]/gi,                               // unescape with encoded strings
-    /\\x[0-9a-f]{2}\\x[0-9a-f]{2}\\x[0-9a-f]{2}/gi,       // long hex escape sequences (3+ in a row)
-    /String\.fromCharCode\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+/gi, // fromCharCode with multiple numbers
-  ];
-  let obfuscationScore = 0;
-  for (const pattern of obfuscatedPatterns) {
-    const matches = bodyText.match(pattern);
-    if (matches) obfuscationScore += matches.length;
-  }
-
-  // External script count (scripts loading from other domains)
-  const externalScriptRegex = /<script[^>]+src\s*=\s*["'](https?:\/\/[^"']+)["']/gi;
-  const externalScripts: string[] = [];
-  let match;
-  while ((match = externalScriptRegex.exec(bodyText)) !== null) {
-    externalScripts.push(match[1]);
-  }
-
-  // Detect cryptocurrency mining scripts
-  const cryptoMinerPatterns = ['coinhive', 'cryptoloot', 'coin-hive', 'jsecoin', 'cryptonight', 'miner.start'];
-  let hasCryptoMiner = false;
-  for (const pattern of cryptoMinerPatterns) {
-    if (lowerBody.includes(pattern)) {
-      hasCryptoMiner = true;
-      break;
-    }
-  }
-
-  // Detect auto-download attempts
-  const downloadPatterns = [
-    /\.apk["']/gi,
-    /\.exe["']/gi,
-    /\.msi["']/gi,
-    /\.dmg["']/gi,
-    /download\s*=\s*["']/gi,
-    /application\/octet-stream/gi,
-  ];
-  let autoDownloadCount = 0;
-  for (const pattern of downloadPatterns) {
-    const matches = bodyText.match(pattern);
-    if (matches) autoDownloadCount += matches.length;
-  }
-
-  return {
-    adNetworkCount,
-    detectedAdNetworks,
-    popupScriptCount,
-    jsRedirectCount,
-    obfuscationScore,
-    externalScriptCount: externalScripts.length,
-    hasCryptoMiner,
-    autoDownloadCount,
-  };
+  return { isThreat, threatDetails, scanResults: lookupResults };
 }
 
-function analyzeDomain(hostname: string) {
-  const lower = hostname.toLowerCase();
-
-  const hasSuspiciousTld = SUSPICIOUS_TLDS.some(tld => lower.endsWith(tld));
-  const hasKnownDangerousKeyword = KNOWN_DANGEROUS_KEYWORDS.some(kw => lower.includes(kw));
-  const hasIPAddress = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
-  const isShortened = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly'].some(d => lower.includes(d));
-  const hasExcessiveSubdomains = hostname.split('.').length > 4;
-  const hasLongHostname = hostname.length > 50;
-
-  return {
-    hasSuspiciousTld,
-    hasKnownDangerousKeyword,
-    hasIPAddress,
-    isShortened,
-    hasExcessiveSubdomains,
-    hasLongHostname,
-  };
-}
-
-// Google Safe Browsing API check
+// ===== Google Safe Browsing =====
 async function checkGoogleSafeBrowsing(url: string): Promise<{ isThreat: boolean; threatTypes: string[] }> {
   const apiKey = Deno.env.get('GOOGLE_SAFE_BROWSING_API_KEY');
   if (!apiKey) {
@@ -192,6 +196,88 @@ async function checkGoogleSafeBrowsing(url: string): Promise<{ isThreat: boolean
   }
 }
 
+// ===== Content analysis helpers =====
+function analyzeHtmlContent(bodyText: string) {
+  const lowerBody = bodyText.toLowerCase();
+
+  let adNetworkCount = 0;
+  const detectedAdNetworks: string[] = [];
+  for (const network of AD_NETWORK_PATTERNS) {
+    const regex = new RegExp(network, 'gi');
+    const matches = lowerBody.match(regex);
+    if (matches) {
+      adNetworkCount += matches.length;
+      detectedAdNetworks.push(network);
+    }
+  }
+
+  let popupScriptCount = 0;
+  for (const pattern of POPUP_PATTERNS) {
+    const matches = bodyText.match(pattern);
+    if (matches) popupScriptCount += matches.length;
+  }
+
+  let jsRedirectCount = 0;
+  for (const pattern of REDIRECT_PATTERNS) {
+    const matches = bodyText.match(pattern);
+    if (matches) jsRedirectCount += matches.length;
+  }
+
+  const obfuscatedPatterns = [
+    /eval\s*\(\s*(?:unescape|atob|String\.fromCharCode)/gi,
+    /document\.write\s*\(\s*(?:unescape|atob)/gi,
+    /unescape\s*\(\s*['"%]/gi,
+    /\\x[0-9a-f]{2}\\x[0-9a-f]{2}\\x[0-9a-f]{2}/gi,
+    /String\.fromCharCode\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+/gi,
+  ];
+  let obfuscationScore = 0;
+  for (const pattern of obfuscatedPatterns) {
+    const matches = bodyText.match(pattern);
+    if (matches) obfuscationScore += matches.length;
+  }
+
+  const externalScriptRegex = /<script[^>]+src\s*=\s*["'](https?:\/\/[^"']+)["']/gi;
+  const externalScripts: string[] = [];
+  let match;
+  while ((match = externalScriptRegex.exec(bodyText)) !== null) {
+    externalScripts.push(match[1]);
+  }
+
+  const cryptoMinerPatterns = ['coinhive', 'cryptoloot', 'coin-hive', 'jsecoin', 'cryptonight', 'miner.start'];
+  let hasCryptoMiner = false;
+  for (const pattern of cryptoMinerPatterns) {
+    if (lowerBody.includes(pattern)) { hasCryptoMiner = true; break; }
+  }
+
+  const downloadPatterns = [
+    /\.apk["']/gi, /\.exe["']/gi, /\.msi["']/gi, /\.dmg["']/gi,
+    /download\s*=\s*["']/gi, /application\/octet-stream/gi,
+  ];
+  let autoDownloadCount = 0;
+  for (const pattern of downloadPatterns) {
+    const matches = bodyText.match(pattern);
+    if (matches) autoDownloadCount += matches.length;
+  }
+
+  return {
+    adNetworkCount, detectedAdNetworks, popupScriptCount, jsRedirectCount,
+    obfuscationScore, externalScriptCount: externalScripts.length,
+    hasCryptoMiner, autoDownloadCount,
+  };
+}
+
+function analyzeDomain(hostname: string) {
+  const lower = hostname.toLowerCase();
+  return {
+    hasSuspiciousTld: SUSPICIOUS_TLDS.some(tld => lower.endsWith(tld)),
+    hasKnownDangerousKeyword: KNOWN_DANGEROUS_KEYWORDS.some(kw => lower.includes(kw)),
+    hasIPAddress: /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname),
+    isShortened: ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly'].some(d => lower.includes(d)),
+    hasExcessiveSubdomains: hostname.split('.').length > 4,
+    hasLongHostname: hostname.length > 50,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -211,8 +297,11 @@ Deno.serve(async (req) => {
       targetUrl = `https://${targetUrl}`;
     }
 
-    // Step 1: Check Google Safe Browsing API first
-    const gsbResult = await checkGoogleSafeBrowsing(targetUrl);
+    // === LAYER 1: Google Safe Browsing (runs in parallel with fetch) ===
+    const gsbPromise = checkGoogleSafeBrowsing(targetUrl);
+
+    // === LAYER 3: MetaDefender (runs in parallel with fetch) ===
+    const metaDefenderPromise = checkMetaDefender(targetUrl);
 
     const startTime = Date.now();
     const controller = new AbortController();
@@ -253,7 +342,7 @@ Deno.serve(async (req) => {
       const msg = fetchError instanceof Error ? fetchError.message : String(fetchError);
       if (msg.includes('dns error') || msg.includes('Name or service not known')) {
         return new Response(JSON.stringify({
-          error: `Domain not found: "${new URL(targetUrl).hostname}" does not exist or cannot be resolved. This could indicate a suspicious or taken-down website.`,
+          error: `Domain not found: "${new URL(targetUrl).hostname}" does not exist or cannot be resolved.`,
           errorType: 'DNS_ERROR',
         }), { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -315,15 +404,22 @@ Deno.serve(async (req) => {
     const domainAnalysis = analyzeDomain(parsedUrl.hostname);
     const iframeCount = iframeMatches ? iframeMatches.length : 0;
 
-    // === THREAT SCORING ===
+    // === LAYER 2: ClamAV Signature Scan ===
+    const clamResult = scanWithClamAV(bodyText);
+
+    // === Await parallel API results ===
+    const gsbResult = await gsbPromise;
+    const metaDefenderResult = await metaDefenderPromise;
+
+    // === MULTI-LAYER THREAT SCORING ===
     let threatScore = 100;
     const threatReasons: string[] = [];
-    let detectionSource = 'ML Model';
+    const detectionSources: string[] = [];
 
-    // If Google Safe Browsing flagged it, override to dangerous
+    // Layer 1: Google Safe Browsing
     if (gsbResult.isThreat) {
       threatScore = 0;
-      detectionSource = 'Google Safe Browsing';
+      detectionSources.push('Google Safe Browsing');
       const threatTypeLabels: Record<string, string> = {
         'MALWARE': 'Malware',
         'SOCIAL_ENGINEERING': 'Phishing/Social Engineering',
@@ -331,12 +427,34 @@ Deno.serve(async (req) => {
         'POTENTIALLY_HARMFUL_APPLICATION': 'Potentially Harmful Application',
       };
       for (const t of gsbResult.threatTypes) {
-        threatReasons.push(`Google Safe Browsing: ${threatTypeLabels[t] || t} detected`);
+        threatReasons.push(`⚠ Dangerous URL detected by Google Safe Browsing: ${threatTypeLabels[t] || t}`);
       }
     }
 
-    // Only run ML model scoring if GSB didn't flag it
-    if (!gsbResult.isThreat) {
+    // Layer 2: ClamAV
+    if (clamResult.infected) {
+      threatScore = Math.min(threatScore, 0);
+      detectionSources.push('ClamAV');
+      for (const threat of clamResult.threats) {
+        threatReasons.push(`⚠ Dangerous content detected by ClamAV antivirus engine: ${threat}`);
+      }
+    }
+
+    // Layer 3: MetaDefender
+    if (metaDefenderResult.isThreat) {
+      threatScore = Math.min(threatScore, 0);
+      detectionSources.push('MetaDefender');
+      for (const detail of metaDefenderResult.threatDetails) {
+        threatReasons.push(`⚠ Dangerous URL detected by MetaDefender security engine: ${detail}`);
+      }
+    }
+
+    // Layer 4: ML Model (only if no security engines flagged it)
+    const anyEngineFlagged = gsbResult.isThreat || clamResult.infected || metaDefenderResult.isThreat;
+
+    if (!anyEngineFlagged) {
+      detectionSources.push('ML Model');
+
       // SSL
       if (!finalUrl.startsWith('https://')) { threatScore -= 15; threatReasons.push('No SSL/HTTPS encryption'); }
 
@@ -400,8 +518,10 @@ Deno.serve(async (req) => {
     }
 
     threatScore = Math.max(0, Math.min(100, threatScore));
-
     const threatLevel = threatScore < 50 ? 'dangerous' : threatScore <= 80 ? 'suspicious' : 'safe';
+
+    // Build combined detection source string
+    const detectionSource = detectionSources.length > 0 ? detectionSources.join(' + ') : 'ML Model';
 
     const result = {
       url: targetUrl,
@@ -444,15 +564,24 @@ Deno.serve(async (req) => {
         port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? '443' : '80'),
         path: parsedUrl.pathname,
       },
-      // NEW: Threat intelligence data
       threatIntelligence: {
         threatLevel,
         threatScore,
         threatReasons,
         detectionSource,
+        detectionSources,
         googleSafeBrowsing: {
           flagged: gsbResult.isThreat,
           threatTypes: gsbResult.threatTypes,
+        },
+        clamAV: {
+          infected: clamResult.infected,
+          threats: clamResult.threats,
+        },
+        metaDefender: {
+          flagged: metaDefenderResult.isThreat,
+          threatDetails: metaDefenderResult.threatDetails,
+          scanResults: metaDefenderResult.scanResults,
         },
         contentAnalysis: {
           adNetworkCount: contentAnalysis.adNetworkCount,

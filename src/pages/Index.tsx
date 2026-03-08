@@ -26,13 +26,14 @@ interface AnalysisState {
   score: number;
   threatReasons: string[];
   detectionSource: string;
+  detectionSources: string[];
 }
 
 // Build features from real backend data
-function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string } {
+function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string; detectionSources: string[] } {
   const ti = data.threatIntelligence;
   if (!ti) {
-    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model" };
+    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model", detectionSources: ["ML Model"] };
   }
 
   const ca = ti.contentAnalysis;
@@ -130,6 +131,7 @@ function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?:
       score: ti.threatScore,
       threatReasons: ti.threatReasons || [],
       detectionSource: ti.detectionSource || 'ML Model',
+      detectionSources: ti.detectionSources || [ti.detectionSource || 'ML Model'],
     };
 }
 
@@ -172,8 +174,8 @@ const Index = () => {
       
       if (res.ok) {
         // Use REAL backend threat intelligence
-        const { threatLevel, features, score, threatReasons, detectionSource } = buildFeaturesFromBackend(resData);
-        setAnalysis({ url, threatLevel, features, score, threatReasons, detectionSource });
+        const { threatLevel, features, score, threatReasons, detectionSource, detectionSources } = buildFeaturesFromBackend(resData);
+        setAnalysis({ url, threatLevel, features, score, threatReasons, detectionSource, detectionSources });
         setDetailedData(resData);
       } else {
         // Backend error (DNS, timeout, etc.) - show error + mark as suspicious
@@ -206,6 +208,7 @@ const Index = () => {
           score,
           threatReasons: [resData.error || 'Analysis failed'],
           detectionSource: 'ML Model',
+          detectionSources: ['ML Model'],
         });
       }
     } catch (e) {
@@ -258,6 +261,7 @@ const Index = () => {
                 features={analysis.features}
                 score={analysis.score}
                 detectionSource={analysis.detectionSource}
+                detectionSources={analysis.detectionSources}
               />
 
               {/* Threat Reasons */}
