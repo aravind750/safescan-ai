@@ -208,6 +208,7 @@ const Index = () => {
           score,
           threatReasons: [resData.error || 'Analysis failed'],
           detectionSource: 'ML Model',
+          detectionSources: ['ML Model'],
         });
       }
     } catch (e) {
