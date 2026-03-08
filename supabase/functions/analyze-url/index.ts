@@ -313,6 +313,7 @@ Deno.serve(async (req) => {
     // === DEEP CONTENT ANALYSIS ===
     const contentAnalysis = analyzeHtmlContent(bodyText);
     const domainAnalysis = analyzeDomain(parsedUrl.hostname);
+    const iframeCount = iframeMatches ? iframeMatches.length : 0;
 
     // === THREAT SCORING ===
     let threatScore = 100;
@@ -373,9 +374,8 @@ Deno.serve(async (req) => {
       if (contentAnalysis.autoDownloadCount > 0) { threatScore -= 15; threatReasons.push(`Auto-download attempts detected (${contentAnalysis.autoDownloadCount})`); }
 
       // Excessive iframes
-      const iframeCountForScoring = iframeMatches ? iframeMatches.length : 0;
-      if (iframeCountForScoring > 5) { threatScore -= 15; threatReasons.push(`Excessive iframes (${iframeCountForScoring}) - likely ad injection`); }
-      else if (iframeCountForScoring > 2) { threatScore -= 8; threatReasons.push(`Multiple iframes detected (${iframeCountForScoring})`); }
+      if (iframeCount > 5) { threatScore -= 15; threatReasons.push(`Excessive iframes (${iframeCount}) - likely ad injection`); }
+      else if (iframeCount > 2) { threatScore -= 8; threatReasons.push(`Multiple iframes detected (${iframeCount})`); }
 
       // Excessive external scripts
       if (contentAnalysis.externalScriptCount > 20) { threatScore -= 15; threatReasons.push(`Excessive external scripts (${contentAnalysis.externalScriptCount})`); }
