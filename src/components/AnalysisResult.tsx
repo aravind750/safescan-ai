@@ -27,7 +27,7 @@ interface AnalysisResultProps {
   detectionSources?: string[];
 }
 
-export const AnalysisResult = ({ url, threatLevel, features, score, detectionSource }: AnalysisResultProps) => {
+export const AnalysisResult = ({ url, threatLevel, features, score, detectionSource, detectionSources }: AnalysisResultProps) => {
   const statusConfig = {
     safe: {
       title: "Safe",
