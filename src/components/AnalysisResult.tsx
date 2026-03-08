@@ -79,6 +79,13 @@ export const AnalysisResult = ({ url, threatLevel, features, score, detectionSou
               </Badge>
             </div>
             <p className="text-muted-foreground mb-3">{config.description}</p>
+            {detectionSource && (
+              <div className="mb-3">
+                <Badge variant="secondary" className="text-xs">
+                  🔍 Detected by: {detectionSource}
+                </Badge>
+              </div>
+            )}
             <div className="flex items-center justify-center md:justify-start gap-2 text-sm text-muted-foreground bg-background/50 rounded-lg px-3 py-2">
               <Globe className="w-4 h-4" />
               <span className="truncate max-w-md font-mono">{url}</span>
