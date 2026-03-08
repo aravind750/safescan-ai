@@ -23,6 +23,7 @@ interface AnalysisResultProps {
   threatLevel: ThreatLevel;
   features: AnalysisFeature[];
   score: number;
+  detectionSource?: string;
 }
 
 export const AnalysisResult = ({ url, threatLevel, features, score }: AnalysisResultProps) => {
