@@ -25,6 +25,7 @@ interface AnalysisState {
   features: AnalysisFeature[];
   score: number;
   threatReasons: string[];
+  detectionSource: string;
 }
 
 // Build features from real backend data
