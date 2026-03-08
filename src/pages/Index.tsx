@@ -131,6 +131,7 @@ function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?:
       score: ti.threatScore,
       threatReasons: ti.threatReasons || [],
       detectionSource: ti.detectionSource || 'ML Model',
+      detectionSources: ti.detectionSources || [ti.detectionSource || 'ML Model'],
     };
 }
 
