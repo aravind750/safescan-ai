@@ -124,12 +124,13 @@ function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?:
     },
   ];
 
-  return {
-    threatLevel: ti.threatLevel as ThreatLevel,
-    features,
-    score: ti.threatScore,
-    threatReasons: ti.threatReasons || [],
-  };
+    return {
+      threatLevel: ti.threatLevel as ThreatLevel,
+      features,
+      score: ti.threatScore,
+      threatReasons: ti.threatReasons || [],
+      detectionSource: ti.detectionSource || 'ML Model',
+    };
 }
 
 const Index = () => {
