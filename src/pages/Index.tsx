@@ -257,6 +257,7 @@ const Index = () => {
                 threatLevel={analysis.threatLevel}
                 features={analysis.features}
                 score={analysis.score}
+                detectionSource={analysis.detectionSource}
               />
 
               {/* Threat Reasons */}
