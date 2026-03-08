@@ -315,69 +315,88 @@ Deno.serve(async (req) => {
     const domainAnalysis = analyzeDomain(parsedUrl.hostname);
 
     // === THREAT SCORING ===
-    let threatScore = 100; // Start at 100 (safe), deduct points
+    let threatScore = 100;
     const threatReasons: string[] = [];
+    let detectionSource = 'ML Model';
 
-    // SSL
-    if (!finalUrl.startsWith('https://')) { threatScore -= 15; threatReasons.push('No SSL/HTTPS encryption'); }
+    // If Google Safe Browsing flagged it, override to dangerous
+    if (gsbResult.isThreat) {
+      threatScore = 0;
+      detectionSource = 'Google Safe Browsing';
+      const threatTypeLabels: Record<string, string> = {
+        'MALWARE': 'Malware',
+        'SOCIAL_ENGINEERING': 'Phishing/Social Engineering',
+        'UNWANTED_SOFTWARE': 'Unwanted Software',
+        'POTENTIALLY_HARMFUL_APPLICATION': 'Potentially Harmful Application',
+      };
+      for (const t of gsbResult.threatTypes) {
+        threatReasons.push(`Google Safe Browsing: ${threatTypeLabels[t] || t} detected`);
+      }
+    }
 
-    // Security headers (minor deductions - many legit sites miss these)
-    let missingHeaders = 0;
-    if (!headers['strict-transport-security']) missingHeaders++;
-    if (!headers['content-security-policy']) missingHeaders++;
-    if (!headers['x-frame-options']) missingHeaders++;
-    if (!headers['x-content-type-options']) missingHeaders++;
-    if (missingHeaders >= 3) { threatScore -= 5; threatReasons.push('Missing multiple security headers'); }
-    else if (missingHeaders >= 2) { threatScore -= 3; threatReasons.push('Some security headers missing'); }
+    // Only run ML model scoring if GSB didn't flag it
+    if (!gsbResult.isThreat) {
+      // SSL
+      if (!finalUrl.startsWith('https://')) { threatScore -= 15; threatReasons.push('No SSL/HTTPS encryption'); }
 
-    // Ad networks (aggressive deductions for excessive ads)
-    if (contentAnalysis.adNetworkCount > 10) { threatScore -= 25; threatReasons.push(`Excessive ad networks detected (${contentAnalysis.adNetworkCount} references)`); }
-    else if (contentAnalysis.adNetworkCount > 5) { threatScore -= 15; threatReasons.push(`Multiple ad networks detected (${contentAnalysis.adNetworkCount} references)`); }
-    else if (contentAnalysis.adNetworkCount > 2) { threatScore -= 8; threatReasons.push('Ad networks detected'); }
+      // Security headers
+      let missingHeaders = 0;
+      if (!headers['strict-transport-security']) missingHeaders++;
+      if (!headers['content-security-policy']) missingHeaders++;
+      if (!headers['x-frame-options']) missingHeaders++;
+      if (!headers['x-content-type-options']) missingHeaders++;
+      if (missingHeaders >= 3) { threatScore -= 5; threatReasons.push('Missing multiple security headers'); }
+      else if (missingHeaders >= 2) { threatScore -= 3; threatReasons.push('Some security headers missing'); }
 
-    // Popup/aggressive scripts (these patterns are specifically malicious)
-    if (contentAnalysis.popupScriptCount > 3) { threatScore -= 25; threatReasons.push(`Aggressive popup/clickjacking scripts detected (${contentAnalysis.popupScriptCount} instances)`); }
-    else if (contentAnalysis.popupScriptCount > 1) { threatScore -= 15; threatReasons.push('Popup/redirect scripts detected'); }
-    else if (contentAnalysis.popupScriptCount > 0) { threatScore -= 5; threatReasons.push('Popup script found'); }
+      // Ad networks
+      if (contentAnalysis.adNetworkCount > 10) { threatScore -= 25; threatReasons.push(`Excessive ad networks detected (${contentAnalysis.adNetworkCount} references)`); }
+      else if (contentAnalysis.adNetworkCount > 5) { threatScore -= 15; threatReasons.push(`Multiple ad networks detected (${contentAnalysis.adNetworkCount} references)`); }
+      else if (contentAnalysis.adNetworkCount > 2) { threatScore -= 8; threatReasons.push('Ad networks detected'); }
 
-    // JS redirects
-    if (contentAnalysis.jsRedirectCount > 3) { threatScore -= 20; threatReasons.push(`Multiple JavaScript redirects (${contentAnalysis.jsRedirectCount})`); }
-    else if (contentAnalysis.jsRedirectCount > 0) { threatScore -= 10; threatReasons.push('JavaScript redirect detected'); }
+      // Popup/aggressive scripts
+      if (contentAnalysis.popupScriptCount > 3) { threatScore -= 25; threatReasons.push(`Aggressive popup/clickjacking scripts detected (${contentAnalysis.popupScriptCount} instances)`); }
+      else if (contentAnalysis.popupScriptCount > 1) { threatScore -= 15; threatReasons.push('Popup/redirect scripts detected'); }
+      else if (contentAnalysis.popupScriptCount > 0) { threatScore -= 5; threatReasons.push('Popup script found'); }
 
-    // Obfuscation
-    if (contentAnalysis.obfuscationScore > 20) { threatScore -= 20; threatReasons.push('Heavily obfuscated JavaScript'); }
-    else if (contentAnalysis.obfuscationScore > 5) { threatScore -= 10; threatReasons.push('Obfuscated JavaScript detected'); }
+      // JS redirects
+      if (contentAnalysis.jsRedirectCount > 3) { threatScore -= 20; threatReasons.push(`Multiple JavaScript redirects (${contentAnalysis.jsRedirectCount})`); }
+      else if (contentAnalysis.jsRedirectCount > 0) { threatScore -= 10; threatReasons.push('JavaScript redirect detected'); }
 
-    // Crypto miners
-    if (contentAnalysis.hasCryptoMiner) { threatScore -= 30; threatReasons.push('Cryptocurrency mining script detected'); }
+      // Obfuscation
+      if (contentAnalysis.obfuscationScore > 20) { threatScore -= 20; threatReasons.push('Heavily obfuscated JavaScript'); }
+      else if (contentAnalysis.obfuscationScore > 5) { threatScore -= 10; threatReasons.push('Obfuscated JavaScript detected'); }
 
-    // Auto downloads
-    if (contentAnalysis.autoDownloadCount > 0) { threatScore -= 15; threatReasons.push(`Auto-download attempts detected (${contentAnalysis.autoDownloadCount})`); }
+      // Crypto miners
+      if (contentAnalysis.hasCryptoMiner) { threatScore -= 30; threatReasons.push('Cryptocurrency mining script detected'); }
 
-    // Excessive iframes (often used for ad injection)
-    const iframeCount = iframeMatches ? iframeMatches.length : 0;
-    if (iframeCount > 5) { threatScore -= 15; threatReasons.push(`Excessive iframes (${iframeCount}) - likely ad injection`); }
-    else if (iframeCount > 2) { threatScore -= 8; threatReasons.push(`Multiple iframes detected (${iframeCount})`); }
+      // Auto downloads
+      if (contentAnalysis.autoDownloadCount > 0) { threatScore -= 15; threatReasons.push(`Auto-download attempts detected (${contentAnalysis.autoDownloadCount})`); }
 
-    // Excessive external scripts
-    if (contentAnalysis.externalScriptCount > 20) { threatScore -= 15; threatReasons.push(`Excessive external scripts (${contentAnalysis.externalScriptCount})`); }
-    else if (contentAnalysis.externalScriptCount > 10) { threatScore -= 8; threatReasons.push(`Many external scripts (${contentAnalysis.externalScriptCount})`); }
+      // Excessive iframes
+      const iframeCountForScoring = iframeMatches ? iframeMatches.length : 0;
+      if (iframeCountForScoring > 5) { threatScore -= 15; threatReasons.push(`Excessive iframes (${iframeCountForScoring}) - likely ad injection`); }
+      else if (iframeCountForScoring > 2) { threatScore -= 8; threatReasons.push(`Multiple iframes detected (${iframeCountForScoring})`); }
 
-    // Domain analysis
-    if (domainAnalysis.hasKnownDangerousKeyword) { threatScore -= 30; threatReasons.push('Domain matches known dangerous/piracy site patterns'); }
-    if (domainAnalysis.hasSuspiciousTld) { threatScore -= 10; threatReasons.push('Suspicious top-level domain'); }
-    if (domainAnalysis.hasIPAddress) { threatScore -= 15; threatReasons.push('Uses IP address instead of domain name'); }
-    if (domainAnalysis.isShortened) { threatScore -= 10; threatReasons.push('URL shortener - destination hidden'); }
-    if (domainAnalysis.hasExcessiveSubdomains) { threatScore -= 8; threatReasons.push('Excessive subdomains'); }
-    if (domainAnalysis.hasLongHostname) { threatScore -= 5; threatReasons.push('Unusually long hostname'); }
+      // Excessive external scripts
+      if (contentAnalysis.externalScriptCount > 20) { threatScore -= 15; threatReasons.push(`Excessive external scripts (${contentAnalysis.externalScriptCount})`); }
+      else if (contentAnalysis.externalScriptCount > 10) { threatScore -= 8; threatReasons.push(`Many external scripts (${contentAnalysis.externalScriptCount})`); }
 
-    // Redirect chain
-    if (redirectChain.length > 3) { threatScore -= 15; threatReasons.push(`Excessive redirects (${redirectChain.length})`); }
-    else if (redirectChain.length > 1) { threatScore -= 5; threatReasons.push(`Multiple redirects (${redirectChain.length})`); }
+      // Domain analysis
+      if (domainAnalysis.hasKnownDangerousKeyword) { threatScore -= 30; threatReasons.push('Domain matches known dangerous/piracy site patterns'); }
+      if (domainAnalysis.hasSuspiciousTld) { threatScore -= 10; threatReasons.push('Suspicious top-level domain'); }
+      if (domainAnalysis.hasIPAddress) { threatScore -= 15; threatReasons.push('Uses IP address instead of domain name'); }
+      if (domainAnalysis.isShortened) { threatScore -= 10; threatReasons.push('URL shortener - destination hidden'); }
+      if (domainAnalysis.hasExcessiveSubdomains) { threatScore -= 8; threatReasons.push('Excessive subdomains'); }
+      if (domainAnalysis.hasLongHostname) { threatScore -= 5; threatReasons.push('Unusually long hostname'); }
 
-    // Password fields without SSL
-    if ((inputPasswordMatches?.length ?? 0) > 0 && !finalUrl.startsWith('https://')) {
-      threatScore -= 20; threatReasons.push('Password fields on non-HTTPS page');
+      // Redirect chain
+      if (redirectChain.length > 3) { threatScore -= 15; threatReasons.push(`Excessive redirects (${redirectChain.length})`); }
+      else if (redirectChain.length > 1) { threatScore -= 5; threatReasons.push(`Multiple redirects (${redirectChain.length})`); }
+
+      // Password fields without SSL
+      if ((inputPasswordMatches?.length ?? 0) > 0 && !finalUrl.startsWith('https://')) {
+        threatScore -= 20; threatReasons.push('Password fields on non-HTTPS page');
+      }
     }
 
     threatScore = Math.max(0, Math.min(100, threatScore));
