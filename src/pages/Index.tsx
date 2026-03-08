@@ -30,7 +30,7 @@ interface AnalysisState {
 }
 
 // Build features from real backend data
-function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string } {
+function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string; detectionSources: string[] } {
   const ti = data.threatIntelligence;
   if (!ti) {
     return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model", detectionSources: ["ML Model"] };
