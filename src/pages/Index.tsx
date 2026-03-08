@@ -174,8 +174,8 @@ const Index = () => {
       
       if (res.ok) {
         // Use REAL backend threat intelligence
-        const { threatLevel, features, score, threatReasons, detectionSource } = buildFeaturesFromBackend(resData);
-        setAnalysis({ url, threatLevel, features, score, threatReasons, detectionSource });
+        const { threatLevel, features, score, threatReasons, detectionSource, detectionSources } = buildFeaturesFromBackend(resData);
+        setAnalysis({ url, threatLevel, features, score, threatReasons, detectionSource, detectionSources });
         setDetailedData(resData);
       } else {
         // Backend error (DNS, timeout, etc.) - show error + mark as suspicious
