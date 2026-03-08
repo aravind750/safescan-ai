@@ -313,6 +313,7 @@ Deno.serve(async (req) => {
     // === DEEP CONTENT ANALYSIS ===
     const contentAnalysis = analyzeHtmlContent(bodyText);
     const domainAnalysis = analyzeDomain(parsedUrl.hostname);
+    const iframeCount = iframeMatches ? iframeMatches.length : 0;
 
     // === THREAT SCORING ===
     let threatScore = 100;
