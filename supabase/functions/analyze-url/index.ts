@@ -449,6 +449,11 @@ Deno.serve(async (req) => {
         threatLevel,
         threatScore,
         threatReasons,
+        detectionSource,
+        googleSafeBrowsing: {
+          flagged: gsbResult.isThreat,
+          threatTypes: gsbResult.threatTypes,
+        },
         contentAnalysis: {
           adNetworkCount: contentAnalysis.adNetworkCount,
           detectedAdNetworks: contentAnalysis.detectedAdNetworks,
