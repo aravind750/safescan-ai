@@ -341,7 +341,7 @@ Deno.serve(async (req) => {
 
     threatScore = Math.max(0, Math.min(100, threatScore));
 
-    const threatLevel = threatScore < 40 ? 'dangerous' : threatScore < 70 ? 'suspicious' : 'safe';
+    const threatLevel = threatScore < 50 ? 'dangerous' : threatScore <= 80 ? 'suspicious' : 'safe';
 
     const result = {
       url: targetUrl,
