@@ -32,7 +32,7 @@ interface AnalysisState {
 function buildFeaturesFromBackend(data: UrlAnalysisData & { threatIntelligence?: any }): { threatLevel: ThreatLevel; features: AnalysisFeature[]; score: number; threatReasons: string[]; detectionSource: string } {
   const ti = data.threatIntelligence;
   if (!ti) {
-    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model" };
+    return { threatLevel: "suspicious", features: [], score: 50, threatReasons: ["Analysis incomplete"], detectionSource: "ML Model", detectionSources: ["ML Model"] };
   }
 
   const ca = ti.contentAnalysis;
